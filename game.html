@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Real World RTS</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;background:#172019;color:#eee;font-family:Arial,sans-serif}
+#game{position:relative;width:100%;height:100%;touch-action:none;background:
+radial-gradient(circle at 20% 25%,#668060 0 12%,transparent 13%),
+radial-gradient(circle at 75% 70%,#526b50 0 15%,transparent 16%),#405a43}
+#terrain{position:absolute;inset:-20%;background-image:linear-gradient(25deg,transparent 48%,#6d7d63 49% 50%,transparent 51%),linear-gradient(115deg,transparent 48%,#354d38 49% 50%,transparent 51%);background-size:180px 140px;opacity:.55}
+#roads{position:absolute;inset:0}
+.road{position:absolute;background:#777b78;border:2px solid #a2a29c;height:12px;border-radius:9px;transform-origin:left center;opacity:.9}
+.river{position:absolute;background:#3b79a1;border:2px solid #6ca7ca;border-radius:50%;opacity:.8}
+.building{position:absolute;background:#9c9180;border:1px solid #c6baa6;box-shadow:0 1px 3px #0008}
+.panel{position:absolute;z-index:50;background:#10161ddd;border:1px solid #59636c;border-radius:10px;padding:9px;color:#fff;backdrop-filter:blur(4px)}
+#hud{top:8px;left:8px;right:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#hud b{letter-spacing:.5px}.stat{padding:4px 7px;background:#263039;border-radius:6px}
+button{min-height:42px;background:#303c45;color:#fff;border:1px solid #73808a;border-radius:7px;padding:7px 11px;font-weight:600}
+button:active{background:#4d5b66}
+#info{right:8px;top:72px;width:205px;line-height:1.35}.small{font-size:12px;color:#c5ccd0}
+#objective{left:8px;bottom:8px;max-width:380px}.ok{color:#80d28a}.warn{color:#ffcb6b}
+.unit{position:absolute;width:36px;height:36px;border-radius:50%;border:2px solid #fff;z-index:20;text-align:center;line-height:32px;font-size:12px;font-weight:800;box-shadow:0 2px 8px #000a;touch-action:none;user-select:none}
+.blue{background:#1769aa}.red{background:#b52b2b}.selected{outline:4px solid #ffe082;outline-offset:2px}
+.hp{position:absolute;left:-2px;right:-2px;top:-7px;height:4px;background:#202020}.hp i{display:block;height:100%;background:#63c36b}
+.base{position:absolute;width:86px;height:62px;background:#293238;border:3px solid #aab2b6;border-radius:6px;z-index:10;text-align:center;padding-top:18px;font-size:11px;font-weight:bold}
+.node{position:absolute;width:22px;height:22px;border:2px solid white;border-radius:50%;z-index:8;background:#a88439;box-shadow:0 1px 5px #000}
+#banner{position:absolute;inset:0;background:#000b;z-index:100;display:none;align-items:center;justify-content:center;text-align:center}
+#banner div{background:#161c20;border:1px solid #78838b;border-radius:14px;padding:28px;max-width:380px}
+#banner h1{margin-top:0}
+</style></head><body>
+<div id="game">
+<div id="terrain"></div><div id="roads"></div>
+<div class="base" id="base">BAZA GRACZA</div>
+<div class="base" id="enemybase" style="background:#382727">BAZA WROGA</div>
+<div class="node" id="node1" title="Punkt zaopatrzenia"></div><div class="node" id="node2"></div><div class="node" id="node3"></div>
+<div id="hud" class="panel">
+<b>REAL WORLD RTS</b><span class="stat">💰 <span id="res">900</span></span>
+<span class="stat">⛽ <span id="fuel">100</span></span><span class="stat">⏱ <span id="time">00:00</span></span>
+<button id="tank">Czołg 300</button><button id="inf">Piechota 100</button><button id="recon">Rozp. 180</button><button id="pause">⏸</button><button id="restart">↻</button>
+</div>
+<div id="info" class="panel"><b>JEDNOSTKA</b><hr><span id="selected">Brak wyboru</span><p class="small">Dotknij jednostki, potem celu. Dwoma palcami możesz przesuwać mapę.</p></div>
+<div id="objective" class="panel"><b>CEL MISJI</b><div id="obj">Zdobądź 2 z 3 punktów i zniszcz bazę przeciwnika.</div></div>
+<div id="banner"><div><h1 id="result"></h1><p id="resultText"></p><button id="again">Zagraj ponownie</button></div></div>
+</div>
+<script>
+const G=document.getElementById('game'), units=[], resEl=document.getElementById('res'), fuelEl=document.getElementById('fuel');
+let money=900,fuel=100,paused=false,selected=null,elapsed=0,last=performance.now(),uid=0,ended=false,drag=null,panX=0,panY=0;
+const T={tank:{cost:300,hp:150,speed:55,range:145,damage:22,cd:900,letter:'T'},inf:{cost:100,hp:70,speed:72,range:85,damage:10,cd:650,letter:'I'},recon:{cost:180,hp:55,speed:105,range:125,damage:7,cd:1000,letter:'R'}};
+const bases={player:{x:105,y:330,hp:900},enemy:{x:780,y:260,hp:900}};
+function pos(el,x,y){el.style.left=x+'px';el.style.top=y+'px'}
+pos(document.getElementById('base'),bases.player.x,bases.player.y);pos(document.getElementById('enemybase'),bases.enemy.x,bases.enemy.y);
+pos(document.getElementById('node1'),330,180);pos(document.getElementById('node2'),500,430);pos(document.getElementById('node3'),675,180);
+[[90,370,700,55],[130,290,600,55],[350,190,260,55],[520,440,250,-15],[680,190,180,20]].forEach(r=>{let e=document.createElement('div');e.className='road';pos(e,r[0],r[1]);e.style.width=r[2]+'px';e.style.transform='rotate('+r[3]+'deg)';document.getElementById('roads').append(e)});
+function add(type,side,x,y){
+ const u={id:++uid,type,side,x,y,hp:T[type].hp,max:T[type].hp,target:null,dest:null,lastShot:0,captured:0};
+ const e=document.createElement('div');e.className='unit '+(side==='p'?'blue':'red');e.textContent=T[type].letter;
+ e.innerHTML=T[type].letter+'<div class="hp"><i></i></div>';u.el=e;G.append(e);pos(e,x,y);
+ e.addEventListener('pointerdown',ev=>{ev.stopPropagation();if(side==='p'){selected=u;refreshSel()}else if(selected){selected.target=u;selected.dest=null}});
+ units.push(u);return u;
+}
+function refreshSel(){document.querySelectorAll('.unit').forEach(e=>e.classList.remove('selected'));if(!selected){document.getElementById('selected').textContent='Brak wyboru';return}selected.el.classList.add('selected');document.getElementById('selected').innerHTML='<b>'+name(selected)+'</b><br>HP '+Math.ceil(selected.hp)+'/'+selected.max+'<br>Prędkość '+T[selected.type].speed+'<br>Zasięg '+T[selected.type].range}
+function name(u){return ({tank:'Czołg',inf:'Piechota',recon:'Rozpoznanie'})[u.type]+' #'+u.id}
+function buy(type){if(ended)return;let c=T[type].cost;if(money<c)return;money-=c;add(type,'p',bases.player.x+65+Math.random()*35,bases.player.y+Math.random()*55);ui()}
+document.getElementById('tank').onclick=()=>buy('tank');document.getElementById('inf').onclick=()=>buy('inf');document.getElementById('recon').onclick=()=>buy('recon');
+G.addEventListener('pointerdown',e=>{if(e.target!==G&&e.target.id!=='terrain'&&e.target.id!=='roads')return; if(selected){selected.target=null;selected.dest=[e.clientX-panX,e.clientY-panY] }});
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function damage(a,b,now){if(!b||b.hp<=0)return;let d=dist(a,b);if(d<=T[a.type].range&&now-a.lastShot>T[a.type].cd){b.hp-=T[a.type].damage;a.lastShot=now;if(b.hp<=0){b.el.remove();let i=units.indexOf(b);if(i>=0)units.splice(i,1);if(selected===b){selected=null;refreshSel()}}}}
+function move(u,dt){if(!u.dest)return;let dx=u.dest[0]-u.x,dy=u.dest[1]-u.y,d=Math.hypot(dx,dy);if(d<2){u.dest=null;return}let s=T[u.type].speed*dt/1000;u.x+=dx/d*Math.min(s,d);u.y+=dy/d*Math.min(s,d);pos(u.el,u.x,u.y)}
+function enemyAI(now){let ps=units.filter(u=>u.side==='p'), es=units.filter(u=>u.side==='e');es.forEach(e=>{let target=ps.sort((a,b)=>dist(e,a)-dist(e,b))[0];if(target){e.target=target;if(dist(e,target)>T[e.type].range)e.dest=[target.x,target.y]}})}
+function capture(){[['node1',330,180],['node2',500,430],['node3',675,180]].forEach(([id,x,y])=>{let n=document.getElementById(id);let near=units.filter(u=>u.side==='p'&&Math.hypot(u.x-x,u.y-y)<45).length; n.style.background=near?'#3fae66':'#a88439'});let owned=[1,2,3].filter(i=>document.getElementById('node'+i).style.background==='rgb(63, 174, 102)').length;return owned}
+function winLose(){
+ let owned=capture(); if(owned>=2)money+=1;
+ if(owned>=2&&bases.enemy.hp<=0)finish(true);
+ if(bases.player.hp<=0||units.filter(u=>u.side==='p').length===0)finish(false);
+ document.getElementById('obj').innerHTML='Punkty strategiczne: <b>'+owned+'/2</b> &nbsp;|&nbsp; Baza wroga: <b>'+Math.max(0,Math.ceil(bases.enemy.hp))+'</b>';
+}
+function finish(win){ended=true;document.getElementById('banner').style.display='flex';document.getElementById('result').textContent=win?'ZWYCIĘSTWO':'PORAŻKA';document.getElementById('resultText').textContent=win?'Sektor zabezpieczony.':'Twoje siły zostały rozbite.'}
+function ui(){resEl.textContent=Math.floor(money);fuelEl.textContent=Math.floor(fuel);let m=Math.floor(elapsed/60),s=Math.floor(elapsed%60);document.getElementById('time').textContent=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');refreshSel()}
+document.getElementById('pause').onclick=()=>{paused=!paused;document.getElementById('pause').textContent=paused?'▶':'⏸'};
+document.getElementById('restart').onclick=()=>location.reload();document.getElementById('again').onclick=()=>location.reload();
+add('tank','p',170,350);add('inf','p',150,400);add('recon','p',200,300);add('tank','e',700,300);add('inf','e',740,350);add('inf','e',690,220);add('recon','e',760,230);
+setInterval(()=>{if(!paused&&!ended){money+=8+capture()*4;fuel=Math.max(0,fuel-0.5);enemyAI(performance.now());winLose();ui()}},1000);
+function loop(now){let dt=now-last;last=now;if(!paused&&!ended){elapsed+=dt/1000;units.slice().forEach(u=>{move(u,dt);if(u.target&&u.target.hp>0){if(dist(u,u.target)>T[u.type].range)u.dest=[u.target.x,u.target.y];damage(u,u.target,now)}});ui()}requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script></body></html>
